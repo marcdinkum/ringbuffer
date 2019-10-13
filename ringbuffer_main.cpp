@@ -1,58 +1,80 @@
 #include <iostream>
 #include "ringbuffer.h"
 
+//this makes the whole thing need C++17, but the RingBuffer class
+//on its own should also be able to work with C++14
+template<typename...Args>
+auto print(Args... args){
+    ([](auto&& arg){ std::cout << arg << ' '; }(args), ...);
+    std::cout << '\n';
+}
 
 int main()
 {
-RingBuffer buffer(10,"Buffer");
-float inputdata[8]={1,2,3,4,5,6,7,8};
-float anadata[8];
+    //could also be RingBuffer<double> or RingBuffer<long double> for more precision,
+    //To test this, change the using FloatType to double or long double
+    using FloatType = float;
 
-  if(buffer.isLockFree()) std::cout << "Lock free\n";
-  else std::cout << "Not lock free\n";
+    RingBuffer<FloatType> buffer { 10, "Buffer" };
 
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
-  buffer.push(inputdata,1);
-  buffer.push(inputdata,5);
-    buffer.pop(anadata,5);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
+    FloatType inputdata[] = { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0 };
+    FloatType anadata[8];
 
-  buffer.push(inputdata,5);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
-  buffer.push(inputdata,1);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
-  buffer.push(inputdata,1);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
+    buffer.isLockFree() ? print("Lock free") : print("Not lock free");
 
-  if(buffer.items_available_for_read() >= 5){
-    buffer.pop(anadata,5);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
-    for(unsigned long i=0; i<5; i++) std::cout << anadata[i] << " ";
-  }
-  else std::cout << "Not enough data" << std::endl;
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
 
-  buffer.push(inputdata,1);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
-  buffer.push(inputdata,1);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
+    buffer.push(inputdata, 1);
+    buffer.push(inputdata, 5);
+    buffer.pop(anadata, 5);
 
-  if(buffer.items_available_for_read() >= 5){
-    buffer.pop(anadata,5);
-  std::cout << "Avail for write: " << buffer.items_available_for_write() << std::endl;
-  std::cout << "Avail for read: " << buffer.items_available_for_read() << std::endl;
-    for(unsigned long i=0; i<5; i++) std::cout << anadata[i] << " ";
-  }
-  else std::cout << "Not enough data" << std::endl;
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
 
-  std::cout << std::endl;
-  return 0;
+    buffer.push(inputdata, 5);
+
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
+
+    buffer.push(inputdata, 1);
+
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
+
+    buffer.push(inputdata, 1);
+
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
+
+    if(buffer.numItemsAvailableForRead() >= 5)
+    {
+        buffer.pop(anadata, 5);
+        print("Available for write:",   buffer.numItemsAvailableForWrite());
+        print("Available for read:",    buffer.numItemsAvailableForRead());
+        for(int i = 0; i < 5; ++i) print("Anadata: i =", i, ":", anadata[i]);
+    }
+    else print("Not enough data");
+
+    buffer.push(inputdata, 1);
+
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
+
+    buffer.push(inputdata, 1);
+
+    print("Available for write:",   buffer.numItemsAvailableForWrite());
+    print("Available for read:",    buffer.numItemsAvailableForRead());
+
+    if(buffer.numItemsAvailableForRead() >= 5)
+    {
+        buffer.pop(anadata, 5);
+        print("Available for write:",   buffer.numItemsAvailableForWrite());
+        print("Available for read:",    buffer.numItemsAvailableForRead());
+        for(int i = 0; i < 5; ++i) print("Anadata: i =", i, ":", anadata[i]);
+    }
+    else print("Not enough data\n");
+
+
+    return 0;
 }
-
