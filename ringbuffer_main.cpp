@@ -9,7 +9,7 @@ auto print(Args... args){
     std::cout << '\n';
 }
 
-int main()
+auto main() -> int
 {
     //could also be RingBuffer<double> or RingBuffer<long double> for more precision,
     //To test this, change the using FloatType to double or long double
