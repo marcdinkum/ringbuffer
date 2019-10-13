@@ -1,9 +1,14 @@
-# Makefile for ringbuffer
-#
-CPP = g++ --std=c++11
-CFLAGS = -Wall
-LDFLAGS= -lpthread -ljack
+# Makefile for RingBuffer
 
+
+ifeq ($(OS),Linux)
+	LDFLAGS= -lpthread -ljack
+	CPP = g++ --std=c++17
+else
+	CPP = clang++ --std=c++17
+endif
+
+CFLAGS = -Wall
 
 OBJ = ringbuffer.o ringbuffer_main.o
 
@@ -20,4 +25,3 @@ ringbuffer: $(OBJ)
 clean:
 	rm -f *.o
 	rm -f `find . -perm /111 -type f`
-

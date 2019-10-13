@@ -1,142 +1,155 @@
-/*
- * Block-free ringbuffer for synchronisation of producer and consumer threads.
- *
- * Audio callback delivers data, the other thread reads data.
- *
- * Size must be a multiple of the real-time buffer size (e.g. JACK buffer).
- * For the non-realtime thread this is not an issue as long as it's large
- * enough to hold at least two consumer frames (theoretical minimum)
- *
- * Caveats: if consumer threads waits too long, producer can overrun the
- * buffer. This may not be a problem, for this we have resync() that puts
- * the consumer readpointer right on top of the consumer writepointer.
- */
+
 
 #include <iostream>
 #include "ringbuffer.h"
 #include <unistd.h>
-#include <string.h> // memcpy
+#include <string.h>
 
 
- /*
-  * Size is specified as #items, not bytes. Item type is now float and will
-  * eventually be set in template form
-  */
-RingBuffer::RingBuffer(unsigned long size,std::string name)
+// Size is specified as #items, not bytes.
+
+template<typename FloatType>
+RingBuffer<FloatType>::RingBuffer(const uint64 size, const std::string& name) :
+    size(size),
+    buffer(new FloatType[size]),
+    tail(0),
+    head(0),
+    name(name),
+    blockingPush(false),
+    blockingPop(false)
 {
-  tail=0;
-  head=0;
-  this->size=size;
-  itemsize=sizeof(float);
-  buffer = new float [size]; // allocate storage
-  this->name=name;
-  blockingPush=false;
-  blockingPop=false;
-} // RingBuffer()
+
+}
 
 
-RingBuffer::~RingBuffer()
+template<typename FloatType>
+RingBuffer<FloatType>::~RingBuffer()
 {
-  delete [] buffer;
-} // ~RingBuffer()
+    delete[] buffer;
+}
 
 
-unsigned long RingBuffer::items_available_for_write()
+template<typename FloatType>
+auto RingBuffer<FloatType>::numItemsAvailableForWrite() const -> uint64
 {
-long pointerspace=head.load()-tail.load(); // signed
+    // signed space between head and tail index
+    const long pointerSpace = head.load() - tail.load();
 
-  if(pointerspace > 0) return pointerspace; // NB: > 0 so NOT including 0
-  else return pointerspace+size;
-} // items_available_for_write()
+    // NB: > 0 so NOT including 0
+    return pointerSpace > 0 ? pointerSpace : pointerSpace + size;
+}
 
 
-unsigned long RingBuffer::items_available_for_read()
+template<typename FloatType>
+auto RingBuffer<FloatType>::numItemsAvailableForRead() const -> uint64
 {
-long pointerspace=tail.load()-head.load(); // signed
+    // signed space between tail and head index
+    const long pointerSpace = tail.load() - head.load();
 
-  if(pointerspace >= 0) return pointerspace; // NB: >= 0 so including 0
-  else return pointerspace+size;
-} // items_available_for_read()
+    // NB: >= 0 so including 0
+    return pointerSpace >= 0 ? pointerSpace : pointerSpace + size;
+}
 
 
-void RingBuffer::pushMayBlock(bool block)
+template<typename FloatType>
+auto RingBuffer<FloatType>::pushMayBlock(bool block) -> void
 {
-  this->blockingPush=block;
-} // pushMayBlock()
+    blockingPush = block;
+}
 
 
-void RingBuffer::popMayBlock(bool block)
+template<typename FloatType>
+auto RingBuffer<FloatType>::popMayBlock(bool block) -> void
 {
-  this->blockingPop=block;
-} // popMayBlock()
+    blockingPop = block;
+}
 
 
-void RingBuffer::setBlockingNap(unsigned long blockingNap)
+template<typename FloatType>
+auto RingBuffer<FloatType>::setBlockingNap(const uint64 newBlockingNap) -> void
 {
-  this->blockingNap=blockingNap;
-} // setBlockingNap()
+    blockingNap = newBlockingNap;
+}
 
 
-/*
- * Try to write as many items as possible and return the number actually written
- */
-unsigned long RingBuffer::push(float *data,unsigned long n)
+// Try to write as many items as possible and return the number actually written
+
+template<typename FloatType>
+auto RingBuffer<FloatType>::push(FloatType* data, const uint64 numSamples) -> uint64
 {
-  unsigned long space=size;
+    auto space = size;
 
-  if(blockingPush){
-    while((space=items_available_for_write())<n){ // blocking
-      usleep(blockingNap);
-    } // while
-  } // if
-  if(space==0) return 0;
-  unsigned long n_to_write = n<=space ? n : space; // limit
+    if(blockingPush)
+        while((space = numItemsAvailableForWrite()) < numSamples)
+            usleep(static_cast<useconds_t>(blockingNap));
 
-  const auto current_tail = tail.load();
-  if(current_tail + n_to_write <= size){ // chunk fits without wrapping
-    memcpy(buffer+current_tail,data,n_to_write*itemsize);
-  }
-  else {
-    unsigned long first_chunk=size-current_tail;
-    memcpy(buffer+current_tail,data,first_chunk*itemsize);
-    memcpy(buffer,data+first_chunk,(n_to_write-first_chunk)*itemsize);
-  }
-  tail.store((current_tail+n_to_write)%size);
-  return n_to_write;
-} // push()
+    if(space == 0) return 0;
+
+    const auto numToWrite = numSamples <= space ? numSamples : space;
+
+    const auto currentTail = tail.load();
+
+    // wrap if needed
+    if(currentTail + numToWrite <= size)
+    {
+        memcpy(buffer + currentTail, data, numToWrite * itemSize);
+    }
+    else
+    {
+        const auto firstChunk = size - currentTail;
+        memcpy(buffer + currentTail, data, firstChunk * itemSize);
+        memcpy(buffer, data + firstChunk, (numToWrite - firstChunk) * itemSize);
+    }
+
+    tail.store((currentTail + numToWrite) % size);
+
+    return numToWrite;
+}
 
 
-/*
- * Try to read as many items as possible and return the number actually read
- */
-unsigned long RingBuffer::pop(float *data,unsigned long n)
+
+// Try to read as many items as possible and return the number actually read
+
+template<typename FloatType>
+auto RingBuffer<FloatType>::pop(FloatType* data, const uint64 numSamples) -> uint64
 {
-  unsigned long space=size;
+    auto space = size;
 
-  if(blockingPop){
-    while((space=items_available_for_read())<n){ // blocking
-      usleep(blockingNap);
-    } // while
-  } // if
-  if(space==0) return 0;
-  unsigned long n_to_read = n<=space ? n : space; // limit
+    if(blockingPop)
+        while((space = numItemsAvailableForRead()) < numSamples)
+            usleep(static_cast<useconds_t>(blockingNap));
 
-  const auto current_head = head.load();
-  if(current_head + n_to_read <= size){ // no wrapping necessary
-    memcpy(data,buffer+current_head,n_to_read*itemsize);
-  }
-  else {
-    unsigned long first_chunk=size-current_head;
-    memcpy(data,buffer+current_head,first_chunk*itemsize);
-    memcpy(data+first_chunk,buffer,(n_to_read-first_chunk)*itemsize);
-  }
-  head.store((current_head+n_to_read)%size); // zo ongeveer
-  return n_to_read;
-} // pop()
+    if(space == 0) return 0;
+
+    const auto numToRead = numSamples <= space ? numSamples : space;
+
+    const auto currentHead = head.load();
+
+    //wrap if needed
+    if(currentHead + numToRead <= size)
+    {
+        memcpy(data, buffer + currentHead, numToRead * itemSize);
+    }
+    else
+    {
+        const auto firstChunk = size - currentHead;
+        memcpy(data, buffer + currentHead, firstChunk * itemSize);
+        memcpy(data + firstChunk, buffer, (numToRead - firstChunk) * itemSize);
+    }
+
+    head.store((currentHead + numToRead) % size);
+
+    return numToRead;
+}
 
 
-bool RingBuffer::isLockFree()
+template<typename FloatType>
+auto RingBuffer<FloatType>::isLockFree() const -> bool
 {
-  return (tail.is_lock_free() && head.is_lock_free());
-} // isLockFree()
+    return (tail.is_lock_free() && head.is_lock_free());
+}
 
+//three available types as of now...
+template class RingBuffer<float>;
+template class RingBuffer<double>;
+template class RingBuffer<long double>;
